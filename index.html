@@ -1,0 +1,152 @@
+# excel-data-cleaner
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Excel/CSV Data Cleaner & Analyzer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <!-- SheetJS CDN for Excel -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  
+  <!-- PapaParse CDN for CSV -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+  
+</head>
+<body class="bg-gray-100 font-sans">
+
+<div class="container mx-auto p-6">
+  <h1 class="text-3xl font-bold mb-4 text-center">Excel/CSV Data Cleaner & Analyzer</h1>
+  
+  <div class="bg-white shadow p-6 rounded-lg">
+    <input type="file" id="fileInput" class="mb-4 w-full" accept=".csv, .xlsx, .xls">
+    <button id="processBtn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Clean & Analyze</button>
+  </div>
+
+  <div id="outputSection" class="mt-6 hidden">
+    <h2 class="text-2xl font-bold mb-2">Summary & Charts</h2>
+    <canvas id="chartCanvas" class="mb-4"></canvas>
+    <button id="downloadBtn" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Download Cleaned File</button>
+  </div>
+</div>
+
+<script>
+let data = [];
+let cleanedData = [];
+
+// Utility: Clean Data
+function cleanData(rows) {
+  let headers = rows[0];
+  let uniqueRows = [];
+  let seen = new Set();
+
+  // Remove duplicates
+  for (let i = 1; i < rows.length; i++) {
+    let rowStr = JSON.stringify(rows[i]);
+    if (!seen.has(rowStr)) {
+      seen.add(rowStr);
+      uniqueRows.push(rows[i]);
+    }
+  }
+
+  // Fill missing values with empty string
+  uniqueRows = uniqueRows.map(row => row.map(cell => cell === null || cell === undefined ? "" : cell));
+
+  return [headers, ...uniqueRows];
+}
+
+// Generate Chart
+function generateChart(cleaned) {
+  const canvas = document.getElementById('chartCanvas');
+  canvas.innerHTML = '';
+  const ctx = canvas.getContext('2d');
+
+  // Example: Count numeric columns and sum
+  let numericCols = [];
+  let headers = cleaned[0];
+  for (let c = 0; c < headers.length; c++) {
+    if (!isNaN(parseFloat(cleaned[1][c]))) numericCols.push(c);
+  }
+
+  let labels = [];
+  let sums = [];
+
+  numericCols.forEach(c => {
+    let sum = 0;
+    for (let r = 1; r < cleaned.length; r++) {
+      sum += parseFloat(cleaned[r][c]) || 0;
+    }
+    labels.push(headers[c]);
+    sums.push(sum);
+  });
+
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Column Sum',
+        data: sums,
+        backgroundColor: 'rgba(59, 130, 246, 0.7)',
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: true } }
+    }
+  });
+}
+
+// Download Cleaned Excel
+function downloadExcel(cleaned) {
+  const ws = XLSX.utils.aoa_to_sheet(cleaned);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "CleanedData");
+  XLSX.writeFile(wb, "CleanedData.xlsx");
+}
+
+// Handle File Upload & Processing
+document.getElementById('processBtn').addEventListener('click', () => {
+  const file = document.getElementById('fileInput').files[0];
+  if (!file) { alert("Please select a file."); return; }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    let ext = file.name.split('.').pop().toLowerCase();
+    if (ext === 'csv') {
+      const parsed = Papa.parse(e.target.result);
+      data = parsed.data;
+      cleanedData = cleanData(data);
+      document.getElementById('outputSection').classList.remove('hidden');
+      generateChart(cleanedData);
+    } else if (ext === 'xlsx' || ext === 'xls') {
+      const wb = XLSX.read(e.target.result, {type:'binary'});
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      data = XLSX.utils.sheet_to_json(ws, {header:1});
+      cleanedData = cleanData(data);
+      document.getElementById('outputSection').classList.remove('hidden');
+      generateChart(cleanedData);
+    } else {
+      alert("Unsupported file type. Only CSV, XLS, XLSX allowed.");
+    }
+  };
+
+  if (file.name.endsWith(".csv")) reader.readAsText(file);
+  else reader.readAsBinaryString(file);
+});
+
+// Handle Download
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  downloadExcel(cleanedData);
+});
+</script>
+
+</body>
+</html>
