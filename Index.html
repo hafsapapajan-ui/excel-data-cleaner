@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Excel/CSV Data Cleaner & Analyzer Pro</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+
+<div class="max-w-4xl mx-auto p-6">
+    <h1 class="text-3xl font-bold text-center mb-6 text-purple-700">Excel/CSV Data Cleaner & Analyzer Pro</h1>
+
+    <!-- File Upload -->
+    <div class="bg-white p-6 rounded shadow mb-4">
+        <label class="block font-semibold mb-2">Select Operation:</label>
+        <select id="operationSelect" class="w-full p-2 border rounded mb-4">
+            <option value="clean">Clean Data</option>
+            <option value="dedupe">Remove Duplicates</option>
+            <option value="analyze">Analyze Data & Generate Charts</option>
+            <option value="merge">Merge Multiple Files</option>
+            <option value="pdf2excel">PDF → Excel (CSV)</option>
+        </select>
+
+        <label class="block font-semibold mb-2">Upload Excel/CSV File:</label>
+        <input type="file" id="fileInput" class="w-full p-2 border rounded mb-4" accept=".csv, .xlsx, .xls" multiple>
+
+        <button id="runBtn" class="w-full bg-purple-600 text-white py-2 rounded hover:bg-purple-700">Run Operation</button>
+    </div>
+
+    <!-- Output -->
+    <div id="outputSection" class="bg-white p-6 rounded shadow hidden">
+        <h2 class="text-xl font-bold mb-4">Output</h2>
+        <button id="downloadBtn" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 mb-4">Download Cleaned File</button>
+        <button id="downloadChartBtn" class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 mb-4 ml-2">Download Chart</button>
+        <canvas id="chartCanvas" class="w-full h-64 mt-4"></canvas>
+    </div>
+</div>
+
+<script>
+let uploadedData = [];
+let cleanedData = [];
+
+// Utility: Clean Data
+function cleanData(rows) {
+    let headers = rows[0];
+    let uniqueRows = [];
+    let seen = new Set();
+
+    // Remove duplicates
+    for (let i = 1; i < rows.length; i++) {
+        let rowStr = JSON.stringify(rows[i]);
+        if (!seen.has(rowStr)) {
+            seen.add(rowStr);
+            uniqueRows.push(rows[i]);
+        }
+    }
+
+    // Fill missing values
+    uniqueRows = uniqueRows.map(row => row.map(cell => cell == null ? "" : cell));
+
+    return [headers, ...uniqueRows];
+}
+
+// Generate Chart
+function generateChart(data) {
+    const canvas = document.getElementById('chartCanvas');
+    const ctx = canvas.getContext('2d');
+    if(window.myChart) window.myChart.destroy();
+
+    // Example: Show numeric summary of first numeric column
+    const headers = data[0];
+    const rows = data.slice(1);
+
+    // Find first numeric column
+    let colIndex = headers.findIndex((h,i) => rows.every(r => !isNaN(r[i])));
+    if(colIndex === -1) colIndex = 1; // fallback
+
+    const labels = rows.map((r,i)=> `Row ${i+1}`);
+    const values = rows.map(r => Number(r[colIndex]));
+
+    window.myChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: headers[colIndex],
+                data: values,
+                backgroundColor: 'rgba(99, 102, 241, 0.7)'
+            }]
+        },
+        options: {
+            responsive:true,
+            plugins:{
+                legend:{display:true}
+            }
+        }
+    });
+}
+
+// Download Chart
+function downloadChart(chartId, filename="chart.png") {
+    const canvas = document.getElementById(chartId);
+    const link = document.createElement('a');
+    link.href = canvas.toDataURL("image/png");
+    link.download = filename;
+    link.click();
+}
+
+// Download Excel
+function downloadExcel(data, filename="cleaned.xlsx") {
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+    XLSX.writeFile(wb, filename);
+}
+
+// Read File
+document.getElementById('runBtn').addEventListener('click', () => {
+    const files = document.getElementById('fileInput').files;
+    const operation = document.getElementById('operationSelect').value;
+
+    if(files.length === 0){ alert("Please upload file(s)"); return; }
+
+    uploadedData = [];
+
+    let readCount = 0;
+    for(let f=0; f<files.length; f++){
+        const file = files[f];
+        const reader = new FileReader();
+
+        reader.onload = function(e){
+            let data;
+            if(file.name.endsWith(".csv")){
+                data = Papa.parse(e.target.result).data;
+            }else{
+                const wb = XLSX.read(e.target.result, {type:"binary"});
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                data = XLSX.utils.sheet_to_json(ws, {header:1});
+            }
+            uploadedData.push(...data);
+            readCount++;
+            if(readCount === files.length){
+                processData(operation);
+            }
+        }
+
+        if(file.name.endsWith(".csv")){
+            reader.readAsText(file);
+        }else{
+            reader.readAsBinaryString(file);
+        }
+    }
+});
+
+// Process Data based on dropdown
+function processData(operation){
+    cleanedData = [...uploadedData];
+
+    if(operation === "clean") cleanedData = cleanData(cleanedData);
+    if(operation === "dedupe") cleanedData = cleanData(cleanedData);
+    if(operation === "analyze") cleanedData = cleanData(cleanedData);
+    if(operation === "merge") cleanedData = cleanData(cleanedData);
+    if(operation === "pdf2excel"){ alert("PDF → Excel not implemented in this demo"); }
+
+    // Show output
+    document.getElementById('outputSection').classList.remove('hidden');
+
+    // Generate chart for analyze
+    if(operation==="analyze" || operation==="clean" || operation==="dedupe"){
+        generateChart(cleanedData);
+    }
+}
+
+// Download Buttons
+document.getElementById('downloadBtn').addEventListener('click', ()=> downloadExcel(cleanedData));
+document.getElementById('downloadChartBtn').addEventListener('click', ()=> downloadChart('chartCanvas'));
+</script>
+
+</body>
+</html>
